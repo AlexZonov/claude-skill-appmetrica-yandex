@@ -1,0 +1,47 @@
+{
+  "skill_name": "appmetrica-yandex-versions",
+  "evals": [
+    {
+      "id": 0,
+      "name": "pinned-appmetrica-6.9.0",
+      "prompt": "Хочу поднять AppMetrica Unity plugin до 6.9.0 в нашем Unity-проекте. Какой yandex-adapter от AppLovin надо поставить, чтобы ничего не разъехалось? Билдим и на андроид, и на ios.",
+      "expected_output": "Should identify Yandex Ads 8.1.0 (adapter 8.1.0.x) as the Android-exact match, but flag that iOS fails: Yandex iOS 8.1.0 needs AppMetrica pods >= 6.3.0 while plugin 6.9.0 ships 6.2.0. Since the user builds both platforms, the verdict must not be a plain green. Should offer nearest alternatives (e.g. 6.7.0 + 7.16.0.x which is green on both, or 6.10.0 + 8.1.0.x with the Android-ahead caveat).",
+      "files": [],
+      "assertions": [
+        "Names Yandex adapter 8.1.0.x (Yandex Ads SDK 8.1.0) as the Android counterpart of AppMetrica Unity 6.9.0",
+        "States that AppMetrica Unity 6.9.0 ships native Android SDK 8.1.0",
+        "Flags the iOS failure: Yandex Ads iOS 8.1.0 needs AppMetrica pods >= 6.3.0 but 6.9.0 ships 6.2.0",
+        "Does not present the pairing as fully safe, given the user builds both Android and iOS",
+        "Offers at least one concrete alternative pairing (e.g. 6.7.0 + 7.16.0.x, or 6.10.0 + 8.1.0.x)"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "adapter-7.18.3-no-exact-match",
+      "prompt": "Нам прилетел yandex-adapter 7.18.3.0 в MaxSdk. Какую версию аппметрики под него брать?",
+      "expected_output": "Yandex Ads 7.18.3 recommends native AppMetrica Android 7.14.2, and no AppMetrica Unity plugin ships that native version, so there is NO exact match. Must say so explicitly and give nearest options in both directions: down to adapter 7.16.x with plugin 6.7.0 (green), or up into 8.x with the caveat that 8.x has no green pairing.",
+      "files": [],
+      "assertions": [
+        "Translates adapter 7.18.3.0 to Yandex Ads SDK 7.18.3",
+        "States the recommended native AppMetrica Android version for 7.18.3 is 7.14.2",
+        "States explicitly that no AppMetrica Unity plugin ships native 7.14.2, so there is no exact match",
+        "Gives a nearest option below: adapter 7.16.x paired with AppMetrica Unity 6.7.0",
+        "Gives a nearest option above, or explains that the Yandex 8.x line currently has no clean pairing"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "empty-gaid-diagnosis",
+      "prompt": "У нас на андроиде почти у всех новых установок приходит пустой GoogleAID в аппметрике. В прошлом релизе такого не было. В проекте io.appmetrica.analytics 6.7.0 и com.applovin.mediation:yandex-adapter:7.12.0.0. Куда копать?",
+      "expected_output": "Should recognise the version mismatch: Yandex Ads 7.12.0 recommends native AppMetrica Android 7.6.0, but plugin 6.7.0 ships 7.12.0 — several minors ahead, inside the Maven range [7.6.0,8.0.0) so it builds silently. Fix: bump the adapter to 7.16.0.x (which recommends exactly 7.12.0) in Assets/MaxSdk/Mediation/Yandex/Editor/Dependencies.xml. Bonus if it also mentions the init-order trap as the other cause of the same symptom.",
+      "files": [],
+      "assertions": [
+        "Identifies the version mismatch as root cause: Yandex Ads 7.12.0 recommends native AppMetrica 7.6.0 while plugin 6.7.0 ships 7.12.0",
+        "Recommends raising the Yandex adapter to 7.16.0.x rather than downgrading AppMetrica",
+        "Names the file to edit: Assets/MaxSdk/Mediation/Yandex/Editor/Dependencies.xml",
+        "Explains why the build still succeeds (Maven range [7.6.0,8.0.0) permits the skew)",
+        "Mentions the initialization-order trap as the other cause producing the same symptom"
+      ]
+    }
+  ]
+}
