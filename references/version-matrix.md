@@ -1,8 +1,8 @@
 # Version matrix
 
-Snapshot **2026-08-06**. Newest known: Yandex Ads 8.3.0 (Android + iOS), AppLovin Yandex adapter 8.3.0.0, AppMetrica Unity 6.10.0.
+Snapshot **2026-10-09**. Newest known: Yandex Ads 8.6.0 (Android + iOS), AppLovin Yandex adapter 8.6.0.0, AppMetrica Unity 6.10.0.
 
-Re-verified 2026-08-06 against Maven, AppLovin's integration manager and the plugin's git tags: these are still the newest. There is **no** Yandex Ads 8.4.0 and no `yandex-adapter` 8.4.0.0 — Maven has no such module and the `.aar` returns 403.
+Re-verified 2026-10-09 against Maven, CocoaPods, the AppLovin integration manager and the plugin's git tags. New since 2026-09-02: Yandex Ads 8.5.0 and 8.6.0, `yandex-adapter` 8.5.0.0 and 8.6.0.0 (8.4.0.1, 8.5.0.1, 8.6.0.1 and 8.7.0.0 return 403). AppMetrica Unity is still 6.10.0 — `main` was bumped to 6.11.0 development on 2026-08-03 but still declares native Android 8.4.1, and there is no 6.11.0 tag. Native AppMetrica has moved on without it: Android up to 8.6.0, iOS up to **7.0.0**.
 
 Every number below was derived from machine-readable package metadata, not from prose changelogs — see [Refreshing](#refreshing-this-file). The changelogs agree with it, but the metadata is what the build tools actually obey.
 
@@ -40,7 +40,27 @@ Meanwhile AppMetrica Unity ≤ 6.9.0 pins `AppMetricaAnalytics` to an *exact* ve
 
 **6.10.0 is the turning point**: it declares `AppMetricaAnalytics` / `AppMetricaLibraryAdapter` as `~> 6.3` (i.e. `>= 6.3, < 7.0`), so CocoaPods can settle on whatever minor Yandex asks for inside 6.x. It is the first plugin release designed to coexist with an Ads SDK, and on iOS it is the only one that flexes.
 
+That flex ends at 7.0. AppMetrica iOS 7.0.0 is already on CocoaPods; the first Yandex Ads release that asks for `AppMetricaCore ~> 7.x` will break `pod install` against 6.10.0 the same way the exact pins did. Check for that whenever a Yandex Ads newer than this snapshot comes up.
+
 Consequence worth internalising: **a pair can be perfect on Android and impossible on iOS**, and that combination is common from Yandex 7.16.0 onward. Below 7.16.0 the iOS constraint is wide enough that it never decides anything — so check it, but only bring it up when it actually rules a pairing out.
+
+### iOS: a satisfiable pod pairing can still fail to link (Yandex 8.x)
+
+Version resolution is not the only iOS failure mode from Yandex Ads **8.x** onward, and this one is not a version problem at all — so no bump fixes it.
+
+`YandexMobileAds.xcframework` 8.x is Swift and calls `AnalyticsLibraryAdapter.shared` from `MobileAdsCore.MACAppMetricaAdapterImpl`. `AppMetricaLibraryAdapter` is a **source** Swift pod, so the reference is a raw Swift ABI symbol — `$s24AppMetricaLibraryAdapter09AnalyticscD0C6sharedACvau`, the `unsafeMutableAddressor` of a stored `public static let`. That symbol exists only in a **non-resilient** build. Build the pod with `BUILD_LIBRARY_FOR_DISTRIBUTION = YES` and access goes through a getter instead, the addressor disappears, and the link fails:
+
+```
+Undefined symbols for architecture arm64:
+  "AppMetricaLibraryAdapter.AnalyticsLibraryAdapter.shared.unsafeMutableAddressor"
+      referenced from: MobileAdsCore.MACAppMetricaAdapterImpl.init() in YandexMobileAds
+```
+
+Verified present in the 8.3.0 and 8.4.0 binaries — assume every 8.x has it.
+
+In Unity the trigger is **Unity 6000.3**, whose iOS trampoline sets `BUILD_LIBRARY_FOR_DISTRIBUTION = YES` on the `UnityFramework` target (6000.0 does not), and CocoaPods copies that from any user target onto *every* pod target ([`analyzer.rb:455-461`](https://github.com/CocoaPods/CocoaPods/blob/master/lib/cocoapods/installer/analyzer.rb#L455)). Yandex Ads 7.x is unaffected — it reached the adapter through ObjC (`@objc(AMAAnalyticsLibraryAdapter)` / `sharedInstance`), which carries no Swift ABI.
+
+Fix is on the build side, not the version side: clear the flag in a `[PostProcessBuild(Int32.MinValue)]` hook (before EDM4U's `pod install`) on the project and both Unity targets, or force `BUILD_LIBRARY_FOR_DISTRIBUTION = NO` on the AppMetrica pod targets in a Podfile `post_install`. Raise this whenever someone pairs Yandex Ads 8.x with Unity 6000.3+, and refuse to sell a version bump as the cure.
 
 ---
 
@@ -71,12 +91,14 @@ Real pairs, and the trap this skill exists to catch. Fine for Android-only proje
 |---|---|---|---|
 | `8.2.0.x` / `8.3.0.x` | `6.10.0` | 8.4.1 vs `prefers` 8.3.0 ⚠️ inside `strictly [8.3.0,9.0.0)` | `~> 6.3` resolves to the 6.4.x/6.5.x Yandex asks for ✅ |
 | `8.1.0.x` | `6.10.0` | 8.4.1 vs `prefers` 8.1.0 ⚠️ | ✅ |
+| `8.4.0.x` / `8.5.0.x` | `6.10.0` | 8.4.1 is **below** `strictly [8.5.0,9.0.0)` ❌ — Gradle silently raises native to 8.5.0 | `~> 6.3` covers the 6.6.x Yandex asks for ✅ |
+| `8.6.0.x` | `6.10.0` | 8.4.1 is **below** `strictly [8.5.1,9.0.0)` ❌ — Gradle silently raises native to 8.5.1 | `~> 6.3` covers the 6.7.x Yandex asks for ✅ |
 
-Not green — Android sits one minor above `prefers`, though that is a far smaller gap than the five-minor cases elsewhere in this table. It is the only way to be on Yandex Ads 8.x at all today, so present it as a trade-off rather than a recommendation, and say plainly that a clean 8.x pairing needs an AppMetrica Unity release shipping native Android 8.3.0.
+Not green. `8.2.0.x` / `8.3.0.x` is the better of the two shapes: Android sits one minor *above* `prefers`, so the plugin's wrapper runs the native it was built for. From `8.4.0.x` on, the plugin sits *below* the floor and its C# wrapper drives a native it was never built against — newer adapters make the skew worse, not better. Present `8.3.0.x` + `6.10.0` as the trade-off for anyone who needs 8.x, and say plainly that a clean pairing needs an AppMetrica Unity release shipping native Android 8.3.0 (for 8.2/8.3), 8.5.0 (for 8.4/8.5) or 8.5.1 (for 8.6).
 
 ### Adapter versions with no matching plugin at all
 
-`7.6.0`, `7.7.0`–`7.9.0`, `7.10.0`–`7.12.0`, `7.15.x`, `7.17.0`, `7.18.x`, `8.2.0`, `8.3.0` — their `prefers` values (7.2.1, 7.3.0, 7.6.0, 7.10.0, 7.13.0, 7.14.x, 8.3.0) are natives no AppMetrica Unity release ships. Anyone on one of these is on an untested combination whether they know it or not; route them to the nearest green pair.
+`7.6.0`, `7.7.0`–`7.9.0`, `7.10.0`–`7.12.0`, `7.15.x`, `7.17.0`, `7.18.x`, `8.2.0`, `8.3.0`, `8.4.0`, `8.5.0`, `8.6.0` — their `prefers` values (7.2.1, 7.3.0, 7.6.0, 7.10.0, 7.13.0, 7.14.x, 8.3.0, 8.5.0, 8.5.1) are natives no AppMetrica Unity release ships. Anyone on one of these is on an untested combination whether they know it or not; route them to the nearest green pair.
 
 The widest gap to watch for is `7.10.0`–`7.12.0` against plugin `6.7.0`: `prefers` 7.6.0 versus a shipped 7.12.0 is five minors, and it sits inside `strictly [7.6.0,8.0.0)`, so nothing surfaces it.
 
@@ -125,6 +147,8 @@ Upgrade hazards to raise when recommending a jump:
 | 8.0.0 | 8.0.0 | `[8.0.0,9.0.0)` | `~> 6.0.0` | 6.8.0 (Android only) |
 | 8.1.0 | 8.1.0 | `[8.1.0,9.0.0)` | `~> 6.3.0` | 6.9.0 (Android only) |
 | 8.2.0, 8.3.0 | 8.3.0 | `[8.3.0,9.0.0)` | `~> 6.4.0` / `~> 6.5.0` | — |
+| 8.4.0, 8.5.0 | 8.5.0 | `[8.5.0,9.0.0)` | `~> 6.6, >= 6.6.0` | — (6.10.0 ships 8.4.1, **below the floor**) |
+| 8.6.0 | 8.5.1 | `[8.5.1,9.0.0)` | `~> 6.7, >= 6.7.0` | — (6.10.0 ships 8.4.1, **below the floor**) |
 
 Reminder on `~>`: `~> 5.12.1` is `>= 5.12.1, < 5.13.0`, and `~> 6.3` (no patch) is `>= 6.3, < 7.0`. The missing patch segment is the whole difference between "one minor" and "one major".
 
